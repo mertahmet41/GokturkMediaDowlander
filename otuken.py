@@ -61,8 +61,8 @@ def animasyonlu_baslik(metin):
     panel = Panel(
         Text(metin, justify="center", style="bold gold1"),
         border_style="cyan",
-        title="[ GOKTURK MEDYA INDIRME MERKEZI V4.5 ]",
-        subtitle="Siber Indirme Istasyonu"
+        title="[ GOKTURK MEDYA INDIRME MERKEZI V5.0 ]",
+        subtitle="Siber Otomatik Otomasyon Istasyonu"
     )
     console.print(panel)
 
@@ -72,7 +72,6 @@ def ytdlp_ilerleme_cubugu(d):
         toplam = d.get('total_bytes') or d.get('total_bytes_estimate') or 0
         indirilen = d.get('downloaded_bytes', 0)
         
-        # M3u8 parçalarını (fragmanları) takip et ve başlıkta göster
         frag_idx = d.get('fragment_index')
         frag_cnt = d.get('fragment_count')
         
@@ -81,7 +80,7 @@ def ytdlp_ilerleme_cubugu(d):
             task = d['info_dict']['rich_task_id']
             
             if frag_idx and frag_cnt:
-                desc = f"[bold cyan][>] Parça indiliyor: {frag_idx}/{frag_cnt}[/bold cyan]"
+                desc = f"[bold cyan][>] Parça indiriliyor: {frag_idx}/{frag_cnt}[/bold cyan]"
             else:
                 desc = "[bold blue][>] Video indiriliyor...[/bold blue]"
                 
@@ -94,19 +93,22 @@ def ytdlp_ilerleme_cubugu(d):
             progress.update(task, description="[bold gold1][⚡] Parçalar birleştiriliyor (MP4)...[/bold gold1]")
 
 def videoyu_indir_gelismis(url, klasor_yolu, dosya_adi, sadece_ses=False, playlist_mi=False):
-    """Gelişmiş, ham çıktıları gizleyen akıllı indirme motoru."""
+    """Gelişmiş, ham çıktıları gizleyen ve zaman aşımı korumalı indirme motoru."""
     cikis_sablonu = os.path.join(klasor_yolu, f"{dosya_adi}.%(ext)s")
     tipe_gore = "MP3" if sadece_ses else "MP4"
     
     ydl_opts = {
         'outtmpl': cikis_sablonu,
-        'quiet': True,          # Gereksiz logları kapatır
-        'noprogress': True,     # !! yt-dlp'nin o çirkin alt alta satır basmasını ENGELLER !!
+        'quiet': True,          
+        'noprogress': True,     
         'no_warnings': True,
         'progress_hooks': [ytdlp_ilerleme_cubugu],
-        'retries': 5,
+        'retries': 3,
         'fragment_retries': 5,
         'ignoreerrors': False,
+        
+        # ZAMAN AŞIMI GÜNCELLEMESİ: 15 saniye internet/sunucu donarsa indirmeyi durdur ve hata fırlat
+        'timeout': 15,          
         
         'http_headers': {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -137,7 +139,6 @@ def videoyu_indir_gelismis(url, klasor_yolu, dosya_adi, sadece_ses=False, playli
             'remux_video': 'mp4',
         })
 
-    # Tamamen özelleştirilmiş, tek satırda kalan şık Rich İlerleme Çubuğu Tasarımı
     with Progress(
         TextColumn("{task.description}"),
         BarColumn(bar_width=40, complete_style="green", finished_style="bold cyan"),
@@ -176,11 +177,10 @@ def videoyu_indir_gelismis(url, klasor_yolu, dosya_adi, sadece_ses=False, playli
                     OPERASYON_RAPORU.append((v_title[:25], tipe_gore, "BASARILI", "green"))
                 
                 progress.update(task_id, description="[bold green][✓] Tamamlandı![/bold green]")
+                return True # Başarılı bitti sinyali
             except Exception as e:
-                progress.update(task_id, description="[bold red][-] Başarısız![/bold red]")
-                rprint(f"\n[bold red]─── INDIRME HATASI DETAYI ───[/bold red]")
-                rprint(f"[yellow]{str(e)}[/yellow]\n")
-                OPERASYON_RAPORU.append((dosya_adi[:25], tipe_gore, "HATA", "red"))
+                progress.update(task_id, description="[bold red][-] Bağlantı Koptu / Zaman Aşımı![/bold red]")
+                return False # Hata oluştu sinyali (Ana döngü bunu yakalayıp taze link alacak)
 
 def m3u8_linki_yakala(url):
     yakalanan_link = None
@@ -320,12 +320,31 @@ if __name__ == "__main__":
             url = sablon.format(sezon=current_s, bolum=current_b)
             dosya_adi = f"Sezon_{current_s}_Bolum_{current_b}"
             kayit_klasoru = klasor_hazirla(dizi_adi, f"Sezon {current_s}")
-            m3u8_url = m3u8_linki_yakala(url)
-            if m3u8_url:
-                videoyu_indir_gelismis(m3u8_url, kayit_klasoru, dosya_adi, sadece_ses=False)
-            else:
-                rprint(f"[bold red]❌ Kaynak bulunamadi: Sezon {current_s} Bolum {current_b}[/bold red]")
+            
+            # --- GELİŞMİŞ AKILLI RETRY DÖNGÜSÜ MİMARİSİ ---
+            max_deneme = 3
+            deneme = 0
+            basarili = False
+            
+            while deneme < max_deneme:
+                if deneme > 0:
+                    rprint(f"[bold yellow][!] İndirme takıldı veya koptu. Taze link alınıp tekrar deneniyor... (Deneme {deneme+1}/{max_deneme})[/bold yellow]")
+                
+                m3u8_url = m3u8_linki_yakala(url)
+                if m3u8_url:
+                    # İndirmeyi başlat, başarısız olursa timeout mekanizması False dönecek
+                    basarili = videoyu_indir_gelismis(m3u8_url, kayit_klasoru, dosya_adi, sadece_ses=False)
+                    if basarili:
+                        break # Eğer pürüzsüz bittiyse deneme döngüsünden çık
+                else:
+                    rprint(f"[bold red]❌ Siteden video kaynağı sökülemedi, {5 * (deneme+1)} sn bekleniyor...[/bold red]")
+                    time.sleep(5 * (deneme+1))
+                deneme += 1
+                
+            if not basarili:
+                rprint(f"[bold red]❌ Kaynak bulunamadi veya zaman asimi kırılamadı: Sezon {current_s} Bolum {current_b}[/bold red]")
                 OPERASYON_RAPORU.append((dosya_adi, "MP4", "BULUNAMADI", "red"))
+            
             if current_s == s_bit and current_b == b_bit: break
             current_b += 1
             if current_b > 30 and current_s < s_bit: 
