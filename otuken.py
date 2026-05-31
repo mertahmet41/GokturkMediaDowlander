@@ -15,7 +15,7 @@ from rich.text import Text
 from rich.table import Table
 from rich import print as rprint
 
-# --- AYAR SİSTEMİ EKLENTİSİ ---
+# --- AYAR SİSTEMİ ---
 APP_NAME = "GokturkMediaDownloader"
 CONFIG_DIR = Path(os.getenv('APPDATA')) / APP_NAME
 CONFIG_FILE = CONFIG_DIR / "config.json"
@@ -25,18 +25,20 @@ def ayar_yukle():
     if not CONFIG_FILE.exists():
         default_path = str(Path.home() / "Desktop" / "Indirilen_Mediyalar")
         ayarlar = {"indirme_dizini": default_path}
-        with open(CONFIG_FILE, "w") as f: json.dump(ayarlar, f)
+        with open(CONFIG_FILE, "w") as f: 
+            json.dump(ayarlar, f)
         return ayarlar
-    with open(CONFIG_FILE, "r") as f: return json.load(f)
+    with open(CONFIG_FILE, "r") as f: 
+        return json.load(f)
 
 def ayar_kaydet(yeni_yol):
     ayarlar = {"indirme_dizini": yeni_yol}
-    with open(CONFIG_FILE, "w") as f: json.dump(ayarlar, f)
+    with open(CONFIG_FILE, "w") as f: 
+        json.dump(ayarlar, f)
     rprint("[bold green]✓ Ayarlar başarıyla kaydedildi![/bold green]")
 
 console = Console()
 
-# KLASÖRÜ BAŞLANGIÇTA OTOMATİK OLUŞTURMA VE AYAR YÜKLEME
 ayarlar = ayar_yukle()
 INDIRME_KLASORU = ayarlar["indirme_dizini"]
 if not os.path.exists(INDIRME_KLASORU):
@@ -65,30 +67,55 @@ def animasyonlu_baslik(metin):
     console.print(panel)
 
 def ytdlp_ilerleme_cubugu(d):
+    """yt-dlp çıktısını yakalayıp Rich çubuğuna pürüzsüz aktaran fonksiyon."""
     if d['status'] == 'downloading':
         toplam = d.get('total_bytes') or d.get('total_bytes_estimate') or 0
         indirilen = d.get('downloaded_bytes', 0)
+        
+        # M3u8 parçalarını (fragmanları) takip et ve başlıkta göster
+        frag_idx = d.get('fragment_index')
+        frag_cnt = d.get('fragment_count')
+        
         if 'rich_progress' in d['info_dict']:
             progress = d['info_dict']['rich_progress']
             task = d['info_dict']['rich_task_id']
-            progress.update(task, completed=indirilen, total=toplam)
+            
+            if frag_idx and frag_cnt:
+                desc = f"[bold cyan][>] Parça indiliyor: {frag_idx}/{frag_cnt}[/bold cyan]"
+            else:
+                desc = "[bold blue][>] Video indiriliyor...[/bold blue]"
+                
+            progress.update(task, completed=indirilen, total=toplam or None, description=desc)
+            
+    elif d['status'] == 'finished':
+        if 'rich_progress' in d['info_dict']:
+            progress = d['info_dict']['rich_progress']
+            task = d['info_dict']['rich_task_id']
+            progress.update(task, description="[bold gold1][⚡] Parçalar birleştiriliyor (MP4)...[/bold gold1]")
 
 def videoyu_indir_gelismis(url, klasor_yolu, dosya_adi, sadece_ses=False, playlist_mi=False):
-    """Her mod için optimize edilmiş kararlı indirme motoru."""
+    """Gelişmiş, ham çıktıları gizleyen akıllı indirme motoru."""
     cikis_sablonu = os.path.join(klasor_yolu, f"{dosya_adi}.%(ext)s")
     tipe_gore = "MP3" if sadece_ses else "MP4"
     
     ydl_opts = {
         'outtmpl': cikis_sablonu,
-        'quiet': True,
+        'quiet': True,          # Gereksiz logları kapatır
+        'noprogress': True,     # !! yt-dlp'nin o çirkin alt alta satır basmasını ENGELLER !!
         'no_warnings': True,
         'progress_hooks': [ytdlp_ilerleme_cubugu],
         'retries': 5,
         'fragment_retries': 5,
-        'ignoreerrors': True,
+        'ignoreerrors': False,
+        
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': '*/*',
+            'Accept-Language': 'tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7',
+            'Origin': 'null',
+        }
     }
     
-    # Playlist mi yoksa tekil video mu olduğunu yt-dlp'ye kesin olarak bildiriyoruz
     if playlist_mi:
         ydl_opts.update({'noplaylist': False, 'extract_flat': False})
     else:
@@ -105,12 +132,14 @@ def videoyu_indir_gelismis(url, klasor_yolu, dosya_adi, sadece_ses=False, playli
         })
     else:
         ydl_opts.update({
-            'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+            'format': 'bestvideo+bestaudio/best',
             'merge_output_format': 'mp4',
+            'remux_video': 'mp4',
         })
 
+    # Tamamen özelleştirilmiş, tek satırda kalan şık Rich İlerleme Çubuğu Tasarımı
     with Progress(
-        TextColumn("[bold blue]{task.description}"),
+        TextColumn("{task.description}"),
         BarColumn(bar_width=40, complete_style="green", finished_style="bold cyan"),
         DownloadColumn(),
         TransferSpeedColumn(),
@@ -118,21 +147,19 @@ def videoyu_indir_gelismis(url, klasor_yolu, dosya_adi, sadece_ses=False, playli
         console=console
     ) as progress:
         
-        task_id = progress.add_task(f"[..] Baglanti Kuruluyor...", total=100)
+        task_id = progress.add_task("[bold yellow][..] Bağlantı kuruluyor...[/bold yellow]", total=100)
         
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             try:
                 info = ydl.extract_info(url, download=False)
                 
-                # Eğer Playlist modu aktifse ve içeride birden fazla video varsa
                 if playlist_mi and info and 'entries' in info:
                     entries = list(info['entries'])
-                    progress.update(task_id, description=f"[+] {len(entries)} Sarki Siralandi")
+                    progress.update(task_id, description=f"[+] {len(entries)} Şarkı Listelendi")
                     
                     for idx, entry in enumerate(entries):
                         if not entry: continue
                         v_title = entry.get('title', f"Sarki_{idx+1}")
-                        progress.update(task_id, description=f"[>] {v_title[:15]}...")
                         entry['rich_progress'] = progress
                         entry['rich_task_id'] = task_id
                         try:
@@ -141,17 +168,18 @@ def videoyu_indir_gelismis(url, klasor_yolu, dosya_adi, sadece_ses=False, playli
                         except:
                             OPERASYON_RAPORU.append((v_title[:25], tipe_gore, "HATA", "red"))
                 else:
-                    # Tekli İndirme Modu
                     v_title = info.get('title', dosya_adi) if info else dosya_adi
-                    progress.update(task_id, description=f"[>] {v_title[:15]}...")
-                    info['rich_progress'] = progress
-                    info['rich_task_id'] = task_id
-                    ydl.process_info(info)
+                    if info:
+                        info['rich_progress'] = progress
+                        info['rich_task_id'] = task_id
+                        ydl.process_info(info)
                     OPERASYON_RAPORU.append((v_title[:25], tipe_gore, "BASARILI", "green"))
                 
-                progress.update(task_id, description="[+] Bitti!")
+                progress.update(task_id, description="[bold green][✓] Tamamlandı![/bold green]")
             except Exception as e:
-                progress.update(task_id, description="[-] Basarisiz!")
+                progress.update(task_id, description="[bold red][-] Başarısız![/bold red]")
+                rprint(f"\n[bold red]─── INDIRME HATASI DETAYI ───[/bold red]")
+                rprint(f"[yellow]{str(e)}[/yellow]\n")
                 OPERASYON_RAPORU.append((dosya_adi[:25], tipe_gore, "HATA", "red"))
 
 def m3u8_linki_yakala(url):
@@ -159,49 +187,86 @@ def m3u8_linki_yakala(url):
     with console.status("[bold yellow]Gokturk Botu calisiyor, gizli kaynaklar araniyor...[/bold yellow]", spinner="bouncingBar"):
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
-            context = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+            context = browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                viewport={"width": 1280, "height": 720}
+            )
             page = context.new_page()
             
             def istek_kontrol(request):
                 nonlocal yakalanan_link
                 if ".m3u8" in request.url and "playlist" not in request.url:
-                    if not yakalanan_link: yakalanan_link = request.url
+                    if not yakalanan_link: 
+                        yakalanan_link = request.url
 
             page.on("request", istek_kontrol)
+            
             try:
-                page.goto(url, wait_until="networkidle", timeout=45000)
-                time.sleep(2)
-                tıklanacaklar = ["div.play-button", "iframe", "video", ".player", "#player", ".play-btn"]
+                page.goto(url, wait_until="domcontentloaded", timeout=45000)
+                time.sleep(3)
+                
+                tıklanacaklar = [
+                    "div.play-button", ".play-btn", "[class*='play']", 
+                    ".vjs-big-play-button", "button.jw-display-icon-container",
+                    "video", "iframe", "#player", ".player"
+                ]
+                
                 for secici in tıklanacaklar:
                     if yakalanan_link: break
                     try:
                         el = page.locator(secici).first
-                        if el.is_visible(): el.click(force=True); time.sleep(1)
-                    except: continue
-            except: pass
-            finally: browser.close()
+                        if el.is_visible():
+                            el.click(force=True)
+                            time.sleep(1.5)
+                    except:
+                        continue
+                        
+                if not yakalanan_link:
+                    page.mouse.click(640, 360)
+                    time.sleep(2)
+                    if not yakalanan_link:
+                        page.mouse.click(640, 360)
+                        time.sleep(2)
+                        
+            except Exception as e:
+                pass
+            finally:
+                browser.close()
+                
     return yakalanan_link
 
 def link_sablonu_olustur(ornek_link):
     sayilar = re.findall(r'\d+', ornek_link)
     if len(sayilar) < 2: return None, None, None, "Dizi"
     
+    parcalar = [p for p in ornek_link.split('/') if p]
     dizi_adi = "Bilinmeyen Dizi"
-    parcalar = ornek_link.split('/')
-    for p in parcalar:
-        if "dizi" in p or "izle" in p or len(p) < 3: continue
-        if "-" in p or "_" in p:
-            dizi_adi = p.replace("-", " ").replace("_", " ").title()
-            break
+    
+    if "dizi" in parcalar:
+        idx = parcalar.index("dizi")
+        if idx + 1 < len(parcalar):
+            dizi_adi = parcalar[idx + 1]
+    else:
+        for p in parcalar:
+            if len(p) > 4 and ("-" in p or "_" in p) and "sezon" not in p and "bolum" not in p:
+                dizi_adi = p
+                break
+                
+    dizi_adi = dizi_adi.replace("-izle", "").replace("izle", "")
+    dizi_adi = dizi_adi.replace("-", " ").replace("_", " ").strip().title()
             
     ornek_sezon, ornek_bolum = int(sayilar[-2]), int(sayilar[-1])
+    
     sablon_link = ornek_link
     r_matches = list(re.finditer(r'\d+', ornek_link))
-    b_start, b_end = r_matches[-1].span()
-    sablon_link = sablon_link[:b_start] + "{bolum}" + sablon_link[b_end:]
-    r_matches2 = list(re.finditer(r'\d+', sablon_link))
-    s_start, s_end = r_matches2[-1].span()
-    sablon_link = sablon_link[:s_start] + "{sezon}" + sablon_link[s_end:]
+    if len(r_matches) >= 2:
+        b_start, b_end = r_matches[-1].span()
+        sablon_link = sablon_link[:b_start] + "{bolum}" + sablon_link[b_end:]
+        
+        r_matches2 = list(re.finditer(r'\d+', sablon_link))
+        s_start, s_end = r_matches2[-1].span()
+        sablon_link = sablon_link[:s_start] + "{sezon}" + sablon_link[s_end:]
+        
     return sablon_link, ornek_sezon, ornek_bolum, dizi_adi
 
 def final_raporu_yazdir():
@@ -263,7 +328,9 @@ if __name__ == "__main__":
                 OPERASYON_RAPORU.append((dosya_adi, "MP4", "BULUNAMADI", "red"))
             if current_s == s_bit and current_b == b_bit: break
             current_b += 1
-            if current_b > 30 and current_s < s_bit: current_s += 1; current_b = 1
+            if current_b > 30 and current_s < s_bit: 
+                current_s += 1
+                current_b = 1
 
     elif secim == "2":
         rprint("\n[bold yellow]✍ Indirmek istediginiz video linklerini girin.[/bold yellow]")
