@@ -64,3 +64,7 @@ Playwright bağımlılıkları
 
 ⚖️ Yasal Uyarı
 Bu araç tamamen eğitim ve kişisel kullanım amacıyla açık kaynak kodlu olarak geliştirilmiştir. İndirilen içeriklerin telif hakları tamamen içerik üreticilerine aittir. Kullanıcıların yaptığı indirmelerden ve kullanım şekillerinden geliştirici (Wumpus) sorumlu tutulamaz.
+
+
+Geliştiriciden Not: Merhaba! Medya indirme aracımı indirdiğiniz için teşekkürler Aİ ile yaptığım çok mu belli oluyor :) Her neyse Sonuç olarak güzel çalışıyor ve gerçek anlamda işe yarıyor bazen hata verebilir ama kaldığı yerden devame debiliyor 
+sonuç olarak bu programı dolaylı yoldan geçilştirdim hepsini tamamen ben yazmadım o yüzden siber indirme istasyonu falan diyor ai işte. Ekleme ve geliştirme yaparsanız bana da gönderin çünkü akitf olarak kullanıyorum bu programı. İyi Eğlenceler
