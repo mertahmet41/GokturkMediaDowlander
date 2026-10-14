@@ -1,11 +1,23 @@
 import os
 import re
-import time
 import sys
+import time
 import json
-import yt_dlp
+import urllib.request
+import urllib.parse
 from pathlib import Path
+
+import yt_dlp
 from playwright.sync_api import sync_playwright
+
+# Windows Türkçe (CP1254) terminalinde Unicode (✓, ⚡ vb.) çökmesini önle
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+        sys.stderr.reconfigure(encoding='utf-8')
+    except Exception:
+        pass
+    os.system("")  # Windows ANSI/VT100 desteğini aktif eder
 
 # Gelişmiş arayüz için Rich kütüphanesi
 from rich.console import Console
@@ -17,47 +29,73 @@ from rich import print as rprint
 
 # --- AYAR SİSTEMİ ---
 APP_NAME = "GokturkMediaDownloader"
-CONFIG_DIR = Path(os.getenv('APPDATA')) / APP_NAME
+# Windows ve Linux/macOS uyumlu ayar dizini
+_appdata = os.getenv('APPDATA')
+CONFIG_DIR = Path(_appdata) / APP_NAME if _appdata else Path.home() / ".config" / APP_NAME
 CONFIG_FILE = CONFIG_DIR / "config.json"
 
+
 def ayar_yukle():
+    """Kullanıcı ayarlarını yükler veya varsayılan oluşturur."""
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     if not CONFIG_FILE.exists():
         default_path = str(Path.home() / "Desktop" / "Indirilen_Mediyalar")
         ayarlar = {"indirme_dizini": default_path}
-        with open(CONFIG_FILE, "w") as f: 
-            json.dump(ayarlar, f)
+        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+            json.dump(ayarlar, f, ensure_ascii=False, indent=2)
         return ayarlar
-    with open(CONFIG_FILE, "r") as f: 
+    with open(CONFIG_FILE, "r", encoding="utf-8") as f:
         return json.load(f)
 
+
 def ayar_kaydet(yeni_yol):
+    """Yeni indirme dizinini kaydeder."""
     ayarlar = {"indirme_dizini": yeni_yol}
-    with open(CONFIG_FILE, "w") as f: 
-        json.dump(ayarlar, f)
+    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+        json.dump(ayarlar, f, ensure_ascii=False, indent=2)
     rprint("[bold green]✓ Ayarlar başarıyla kaydedildi![/bold green]")
+
 
 console = Console()
 
 ayarlar = ayar_yukle()
 INDIRME_KLASORU = ayarlar["indirme_dizini"]
 if not os.path.exists(INDIRME_KLASORU):
-    os.makedirs(INDIRME_KLASORU)
+    os.makedirs(INDIRME_KLASORU, exist_ok=True)
 
 OPERASYON_RAPORU = []
 
+
+def dosya_adi_temizle(isim, varsayilan="medya"):
+    """Windows/Linux işletim sistemlerinde dosya adında geçersiz karakterleri temizler."""
+    if not isim or not isinstance(isim, str):
+        return varsayilan
+    # Eğer yt-dlp şablonu ise dokunma
+    if "%(" in isim and ")s" in isim:
+        return isim
+    # Eğer doğrudan URL verildiyse dosya adı kısmını al
+    if isim.startswith("http://") or isim.startswith("https://"):
+        parsed = urllib.parse.urlparse(isim)
+        path = parsed.path.rstrip("/")
+        isim = path.split("/")[-1] if "/" in path else varsayilan
+    # Geçersiz karakterleri kaldır (\ / : * ? " < > |)
+    temiz = re.sub(r'[\\/*?:"<>|]', "", isim).strip()
+    return temiz if temiz else varsayilan
+
+
 def klasor_hazirla(ana_klasor, alt_klasor=""):
     """Dizi adı ve sezona göre klasör mimarisi oluşturur."""
-    temiz_ana = re.sub(r'[\\/*?:"<>|]', "", ana_klasor).strip()
+    temiz_ana = dosya_adi_temizle(ana_klasor, varsayilan="Dizi")
     yol = os.path.join(INDIRME_KLASORU, temiz_ana)
     if alt_klasor:
-        temiz_alt = re.sub(r'[\\/*?:"<>|]', "", alt_klasor).strip()
+        temiz_alt = dosya_adi_temizle(alt_klasor, varsayilan="Sezon")
         yol = os.path.join(yol, temiz_alt)
-    if not os.path.exists(yol):
-        os.makedirs(yol)
+    os.makedirs(yol, exist_ok=True)
     return yol
 
+
 def animasyonlu_baslik(metin):
+    """Açılış banner paneli."""
     panel = Panel(
         Text(metin, justify="center", style="bold gold1"),
         border_style="cyan",
@@ -66,63 +104,75 @@ def animasyonlu_baslik(metin):
     )
     console.print(panel)
 
-def ytdlp_ilerleme_cubugu(d):
-    """yt-dlp çıktısını yakalayıp Rich çubuğuna pürüzsüz aktaran fonksiyon."""
-    if d['status'] == 'downloading':
-        toplam = d.get('total_bytes') or d.get('total_bytes_estimate') or 0
-        indirilen = d.get('downloaded_bytes', 0)
-        
-        frag_idx = d.get('fragment_index')
-        frag_cnt = d.get('fragment_count')
-        
-        if 'rich_progress' in d['info_dict']:
-            progress = d['info_dict']['rich_progress']
-            task = d['info_dict']['rich_task_id']
-            
+
+def make_progress_hook(progress, task_id):
+    """yt-dlp çıktısını KeyError vermeden Rich çubuğuna aktaran güvenli kanca."""
+    def hook(d):
+        status = d.get('status')
+        if status == 'downloading':
+            toplam = d.get('total_bytes') or d.get('total_bytes_estimate') or 0
+            indirilen = d.get('downloaded_bytes', 0)
+            frag_idx = d.get('fragment_index')
+            frag_cnt = d.get('fragment_count')
+
             if frag_idx and frag_cnt:
                 desc = f"[bold cyan][>] Parça indiriliyor: {frag_idx}/{frag_cnt}[/bold cyan]"
             else:
-                desc = "[bold blue][>] Video indiriliyor...[/bold blue]"
-                
-            progress.update(task, completed=indirilen, total=toplam or None, description=desc)
-            
-    elif d['status'] == 'finished':
-        if 'rich_progress' in d['info_dict']:
-            progress = d['info_dict']['rich_progress']
-            task = d['info_dict']['rich_task_id']
-            progress.update(task, description="[bold gold1][⚡] Parçalar birleştiriliyor (MP4)...[/bold gold1]")
+                desc = "[bold blue][>] Medya indiriliyor...[/bold blue]"
+
+            progress.update(task_id, completed=indirilen, total=toplam or None, description=desc)
+
+        elif status == 'finished':
+            progress.update(task_id, description="[bold gold1][⚡] Parçalar birleştiriliyor (MP4/MP3)...[/bold gold1]")
+
+    return hook
+
+
+def spotify_bilgisi_al(url):
+    """Spotify linklerinden oEmbed API ile şarkı/sanatçı başlığını çözer."""
+    try:
+        api_url = f"https://open.spotify.com/oembed?url={urllib.parse.quote(url)}"
+        req = urllib.request.Request(
+            api_url,
+            headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+        )
+        with urllib.request.urlopen(req, timeout=6) as resp:
+            data = json.loads(resp.read().decode('utf-8'))
+            title = data.get('title')
+            if title:
+                return f"{title} audio"
+    except Exception:
+        pass
+    return url
+
 
 def videoyu_indir_gelismis(url, klasor_yolu, dosya_adi, sadece_ses=False, playlist_mi=False):
-    """Gelişmiş, ham çıktıları gizleyen ve zaman aşımı korumalı indirme motoru."""
-    cikis_sablonu = os.path.join(klasor_yolu, f"{dosya_adi}.%(ext)s")
+    """Zaman aşımı korumalı, hata kontrollü gelişmiş indirme motoru."""
+    temiz_dosya = dosya_adi_temizle(dosya_adi)
+    cikis_sablonu = os.path.join(klasor_yolu, f"{temiz_dosya}.%(ext)s")
     tipe_gore = "MP3" if sadece_ses else "MP4"
-    
+
     ydl_opts = {
         'outtmpl': cikis_sablonu,
-        'quiet': True,          
-        'noprogress': True,     
+        'quiet': True,
+        'noprogress': True,
         'no_warnings': True,
-        'progress_hooks': [ytdlp_ilerleme_cubugu],
         'retries': 3,
         'fragment_retries': 5,
-        'ignoreerrors': False,
-        
-        # ZAMAN AŞIMI GÜNCELLEMESİ: 15 saniye internet/sunucu donarsa indirmeyi durdur ve hata fırlat
-        'timeout': 15,          
-        
+        'ignoreerrors': True,
+        'timeout': 30,
         'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
             'Accept': '*/*',
             'Accept-Language': 'tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7',
-            'Origin': 'null',
         }
     }
-    
+
     if playlist_mi:
         ydl_opts.update({'noplaylist': False, 'extract_flat': False})
     else:
         ydl_opts.update({'noplaylist': True, 'extract_flat': False})
-    
+
     if sadece_ses:
         ydl_opts.update({
             'format': 'bestaudio/best',
@@ -147,101 +197,116 @@ def videoyu_indir_gelismis(url, klasor_yolu, dosya_adi, sadece_ses=False, playli
         TimeRemainingColumn(),
         console=console
     ) as progress:
-        
         task_id = progress.add_task("[bold yellow][..] Bağlantı kuruluyor...[/bold yellow]", total=100)
-        
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            try:
-                info = ydl.extract_info(url, download=False)
-                
-                if playlist_mi and info and 'entries' in info:
-                    entries = list(info['entries'])
-                    progress.update(task_id, description=f"[+] {len(entries)} Şarkı Listelendi")
-                    
-                    for idx, entry in enumerate(entries):
-                        if not entry: continue
-                        v_title = entry.get('title', f"Sarki_{idx+1}")
-                        entry['rich_progress'] = progress
-                        entry['rich_task_id'] = task_id
-                        try:
-                            ydl.process_info(entry)
-                            OPERASYON_RAPORU.append((v_title[:25], tipe_gore, "BASARILI", "green"))
-                        except:
-                            OPERASYON_RAPORU.append((v_title[:25], tipe_gore, "HATA", "red"))
+        ydl_opts['progress_hooks'] = [make_progress_hook(progress, task_id)]
+
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+                if not info:
+                    progress.update(task_id, description="[bold red][-] Kaynak bulunamadı![/bold red]")
+                    OPERASYON_RAPORU.append((temiz_dosya[:25], tipe_gore, "BULUNAMADI", "red"))
+                    return False
+
+                if playlist_mi and 'entries' in info:
+                    entries = [e for e in info['entries'] if e]
+                    for entry in entries:
+                        v_title = entry.get('title', temiz_dosya)
+                        OPERASYON_RAPORU.append((v_title[:25], tipe_gore, "BASARILI", "green"))
                 else:
-                    v_title = info.get('title', dosya_adi) if info else dosya_adi
-                    if info:
-                        info['rich_progress'] = progress
-                        info['rich_task_id'] = task_id
-                        ydl.process_info(info)
+                    v_title = info.get('title', temiz_dosya)
                     OPERASYON_RAPORU.append((v_title[:25], tipe_gore, "BASARILI", "green"))
-                
+
                 progress.update(task_id, description="[bold green][✓] Tamamlandı![/bold green]")
-                return True # Başarılı bitti sinyali
-            except Exception as e:
-                progress.update(task_id, description="[bold red][-] Bağlantı Koptu / Zaman Aşımı![/bold red]")
-                return False # Hata oluştu sinyali (Ana döngü bunu yakalayıp taze link alacak)
+                return True
+        except Exception as e:
+            progress.update(task_id, description="[bold red][-] İndirme Başarısız Oldu![/bold red]")
+            OPERASYON_RAPORU.append((temiz_dosya[:25], tipe_gore, "HATA", "red"))
+            return False
+
 
 def m3u8_linki_yakala(url):
+    """Playwright ile arka planda sayfayı yükleyip .m3u8 medya akış linkini yakalar."""
     yakalanan_link = None
-    with console.status("[bold yellow]Gokturk Botu calisiyor, gizli kaynaklar araniyor...[/bold yellow]", spinner="bouncingBar"):
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            context = browser.new_context(
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                viewport={"width": 1280, "height": 720}
-            )
-            page = context.new_page()
-            
-            def istek_kontrol(request):
-                nonlocal yakalanan_link
-                if ".m3u8" in request.url and "playlist" not in request.url:
-                    if not yakalanan_link: 
-                        yakalanan_link = request.url
+    with console.status("[bold yellow]Gokturk Botu çalışıyor, medya kaynakları taranıyor...[/bold yellow]", spinner="bouncingBar"):
+        try:
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=True)
+                context = browser.new_context(
+                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                    viewport={"width": 1280, "height": 720}
+                )
+                page = context.new_page()
 
-            page.on("request", istek_kontrol)
-            
-            try:
-                page.goto(url, wait_until="domcontentloaded", timeout=45000)
-                time.sleep(3)
-                
-                tıklanacaklar = [
-                    "div.play-button", ".play-btn", "[class*='play']", 
-                    ".vjs-big-play-button", "button.jw-display-icon-container",
-                    "video", "iframe", "#player", ".player"
-                ]
-                
-                for secici in tıklanacaklar:
-                    if yakalanan_link: break
-                    try:
-                        el = page.locator(secici).first
-                        if el.is_visible():
-                            el.click(force=True)
-                            time.sleep(1.5)
-                    except:
-                        continue
-                        
-                if not yakalanan_link:
-                    page.mouse.click(640, 360)
-                    time.sleep(2)
+                def istek_kontrol(request):
+                    nonlocal yakalanan_link
+                    req_url = request.url
+                    # Bilinen reklam sağlayıcılarını filtrele
+                    if any(ad in req_url.lower() for ad in ["googleads", "doubleclick", "adservice", "popads", "trafficjunky"]):
+                        return
+                    if ".m3u8" in req_url.lower():
+                        if not yakalanan_link:
+                            yakalanan_link = req_url
+
+                def yanit_kontrol(response):
+                    nonlocal yakalanan_link
+                    if yakalanan_link:
+                        return
+                    ct = response.headers.get("content-type", "").lower()
+                    if "mpegurl" in ct or "application/x-mpegurl" in ct:
+                        yakalanan_link = response.url
+
+                page.on("request", istek_kontrol)
+                page.on("response", yanit_kontrol)
+
+                try:
+                    page.goto(url, wait_until="domcontentloaded", timeout=45000)
+                    time.sleep(3)
+
+                    # Video oynatma tetikleyicileri
+                    tiklanacaklar = [
+                        "div.play-button", ".play-btn", "[class*='play']",
+                        ".vjs-big-play-button", "button.jw-display-icon-container",
+                        "video", "iframe", "#player", ".player"
+                    ]
+
+                    for secici in tiklanacaklar:
+                        if yakalanan_link:
+                            break
+                        try:
+                            el = page.locator(secici).first
+                            if el.is_visible():
+                                el.click(force=True)
+                                time.sleep(1.5)
+                        except Exception:
+                            continue
+
                     if not yakalanan_link:
                         page.mouse.click(640, 360)
                         time.sleep(2)
-                        
-            except Exception as e:
-                pass
-            finally:
-                browser.close()
-                
+                        if not yakalanan_link:
+                            page.mouse.click(640, 360)
+                            time.sleep(2)
+
+                except Exception:
+                    pass
+                finally:
+                    browser.close()
+        except Exception as e:
+            rprint(f"[bold red]Tarayıcı motoru hatası: {e}[/bold red]")
+
     return yakalanan_link
 
+
 def link_sablonu_olustur(ornek_link):
+    """Örnek bölüm linkinden dizi adı, sezon ve bölüm şablonunu ayrıştırır."""
     sayilar = re.findall(r'\d+', ornek_link)
-    if len(sayilar) < 2: return None, None, None, "Dizi"
-    
+    if len(sayilar) < 2:
+        return None, None, None, "Dizi"
+
     parcalar = [p for p in ornek_link.split('/') if p]
     dizi_adi = "Bilinmeyen Dizi"
-    
+
     if "dizi" in parcalar:
         idx = parcalar.index("dizi")
         if idx + 1 < len(parcalar):
@@ -251,149 +316,186 @@ def link_sablonu_olustur(ornek_link):
             if len(p) > 4 and ("-" in p or "_" in p) and "sezon" not in p and "bolum" not in p:
                 dizi_adi = p
                 break
-                
+
+    # Dizi adından sezon ve bölüm ibarelerini temizle
+    dizi_adi = re.sub(r'(\d+)?[-_]?(sezon|season)[-_]?(\d+)?', '', dizi_adi, flags=re.IGNORECASE)
+    dizi_adi = re.sub(r'(\d+)?[-_]?(bolum|episode)[-_]?(\d+)?', '', dizi_adi, flags=re.IGNORECASE)
     dizi_adi = dizi_adi.replace("-izle", "").replace("izle", "")
-    dizi_adi = dizi_adi.replace("-", " ").replace("_", " ").strip().title()
-            
+    dizi_adi = re.sub(r'[-_]+', ' ', dizi_adi).strip().title()
+    if not dizi_adi:
+        dizi_adi = "Dizi"
+
     ornek_sezon, ornek_bolum = int(sayilar[-2]), int(sayilar[-1])
-    
+
     sablon_link = ornek_link
     r_matches = list(re.finditer(r'\d+', ornek_link))
     if len(r_matches) >= 2:
         b_start, b_end = r_matches[-1].span()
         sablon_link = sablon_link[:b_start] + "{bolum}" + sablon_link[b_end:]
-        
+
         r_matches2 = list(re.finditer(r'\d+', sablon_link))
         s_start, s_end = r_matches2[-1].span()
         sablon_link = sablon_link[:s_start] + "{sezon}" + sablon_link[s_end:]
-        
+
     return sablon_link, ornek_sezon, ornek_bolum, dizi_adi
 
+
+def guvenli_sayi_al(soru, varsayilan=1):
+    """Kullanıcıdan güvenli sayı girişi alır, boş veya hatalı girişte varsayılan değeri döner."""
+    deger = console.input(soru).strip()
+    try:
+        return int(deger)
+    except (ValueError, TypeError):
+        return varsayilan
+
+
 def final_raporu_yazdir():
-    if not OPERASYON_RAPORU: return
+    """Operasyon özet tablosunu ekrana basar."""
+    if not OPERASYON_RAPORU:
+        return
     table = Table(title="RAPOR: GOKTURK MEDYA OPERASYONU", title_style="bold magenta")
-    table.add_column("Medya Adi", style="cyan")
-    table.add_column("Tur", style="yellow")
+    table.add_column("Medya Adı", style="cyan")
+    table.add_column("Tür", style="yellow")
     table.add_column("Durum", style="bold")
     for idx, (isim, tur, durum, renk) in enumerate(OPERASYON_RAPORU):
-        if idx > 25: 
-            table.add_row("... ve digerleri ...", "-", "-", "white")
+        if idx > 25:
+            table.add_row("... ve diğerleri ...", "-", "-", "white")
             break
         table.add_row(isim, tur, f"[{renk}]{durum}[/{renk}]")
     console.print("\n")
     console.print(table)
 
-if __name__ == "__main__":
+
+def main():
     os.system('cls' if os.name == 'nt' else 'clear')
     animasyonlu_baslik(" GOKTURK MEDYA ISTASYONUNA HOS GELDINIZ ")
-    
-    rprint("\n[bold magenta]-> Lutfen Yapmak Istediginiz Modu Secin:[/bold magenta]")
-    rprint("[bold green][1][/bold green] Dizi Modu (Ornek Linkten Akilli Sezon/Bolum Araligi Indir)")
-    rprint("[bold green][2][/bold green] Dogrudan Video/Film Indir (Tek Link veya Liste)")
-    rprint("[bold green][3][/bold green] Muzik Indirme Modu (MP3 - YouTube & Spotify)")
-    rprint("[bold cyan][4][/bold cyan] Ayarlar (Dizin Degistir)")
-    
-    secim = console.input("\n[bold cyan]Seciminiz (1/2/3/4): [/bold cyan]").strip()
-    
+
+    rprint("\n[bold magenta]-> Lütfen Yapmak İstediğiniz Modu Seçin:[/bold magenta]")
+    rprint("[bold green][1][/bold green] Dizi Modu (Örnek Linkten Akıllı Sezon/Bölüm Aralığı İndir)")
+    rprint("[bold green][2][/bold green] Doğrudan Video/Film İndir (Tek Link veya Liste)")
+    rprint("[bold green][3][/bold green] Müzik İndirme Modu (MP3 - YouTube & Spotify)")
+    rprint("[bold cyan][4][/bold cyan] Ayarlar (İndirme Dizinini Değiştir)")
+
+    secim = console.input("\n[bold cyan]Seçiminiz (1/2/3/4): [/bold cyan]").strip()
+
     if secim == "4":
         yeni = console.input("\n[bold yellow]Yeni tam dizin yolunu girin: [/bold yellow]").strip()
-        if os.path.exists(os.path.dirname(yeni)):
+        if yeni and os.path.exists(os.path.dirname(yeni)):
             ayar_kaydet(yeni)
         else:
             rprint("[bold red]Hata: Klasör yolu geçersiz![/bold red]")
         sys.exit()
 
     elif secim == "1":
-        ornek_link = console.input("\n[bold yellow]✍ Ornek bir bolum linki yapistirin: [/bold yellow]").strip()
+        ornek_link = console.input("\n[bold yellow]✍ Örnek bir bölüm linki yapıştırın: [/bold yellow]").strip()
         sablon, o_sezon, o_bolum, dizi_adi = link_sablonu_olustur(ornek_link)
         if not sablon:
-            rprint("[bold red]❌ Link yapisi cozulemedi![/bold red]"); exit()
-            
-        rprint(f"[bold green]✓ Algilanan Dizi:[/bold green] {dizi_adi} | [bold green]Sezon:[/bold green] {o_sezon} | [bold green]Bolum:[/bold green] {o_bolum}")
-        s_bas = int(console.input("[bold cyan]> Baslangic Sezonu: [/bold cyan]"))
-        b_bas = int(console.input("[bold cyan]> Baslangic Bolumu: [/bold cyan]"))
-        s_bit = int(console.input("[bold red]■ Bitis Sezonu: [/bold red]"))
-        b_bit = int(console.input("[bold red]■ Bitis Bölümü: [/bold red]"))
-        
+            rprint("[bold red]❌ Link yapısı çözülemedi![/bold red]")
+            sys.exit()
+
+        rprint(f"[bold green]✓ Algılanan Dizi:[/bold green] {dizi_adi} | [bold green]Sezon:[/bold green] {o_sezon} | [bold green]Bölüm:[/bold green] {o_bolum}")
+        s_bas = guvenli_sayi_al(f"[bold cyan]> Başlangıç Sezonu [{o_sezon}]: [/bold cyan]", o_sezon)
+        b_bas = guvenli_sayi_al(f"[bold cyan]> Başlangıç Bölümü [{o_bolum}]: [/bold cyan]", o_bolum)
+        s_bit = guvenli_sayi_al(f"[bold red]■ Bitiş Sezonu [{s_bas}]: [/bold red]", s_bas)
+        b_bit = guvenli_sayi_al(f"[bold red]■ Bitiş Bölümü [{b_bas}]: [/bold red]", b_bas)
+
         current_s, current_b = s_bas, b_bas
+        ardisik_hata = 0
+
         while True:
             url = sablon.format(sezon=current_s, bolum=current_b)
             dosya_adi = f"Sezon_{current_s}_Bolum_{current_b}"
             kayit_klasoru = klasor_hazirla(dizi_adi, f"Sezon {current_s}")
-            
-            # --- GELİŞMİŞ AKILLI RETRY DÖNGÜSÜ MİMARİSİ ---
+
             max_deneme = 3
             deneme = 0
             basarili = False
-            
+
             while deneme < max_deneme:
                 if deneme > 0:
-                    rprint(f"[bold yellow][!] İndirme takıldı veya koptu. Taze link alınıp tekrar deneniyor... (Deneme {deneme+1}/{max_deneme})[/bold yellow]")
-                
+                    rprint(f"[bold yellow][!] İndirme takıldı veya koptu. Tekrar deneniyor... (Deneme {deneme+1}/{max_deneme})[/bold yellow]")
+
                 m3u8_url = m3u8_linki_yakala(url)
                 if m3u8_url:
-                    # İndirmeyi başlat, başarısız olursa timeout mekanizması False dönecek
                     basarili = videoyu_indir_gelismis(m3u8_url, kayit_klasoru, dosya_adi, sadece_ses=False)
                     if basarili:
-                        break # Eğer pürüzsüz bittiyse deneme döngüsünden çık
+                        ardisik_hata = 0
+                        break
                 else:
-                    rprint(f"[bold red]❌ Siteden video kaynağı sökülemedi, {5 * (deneme+1)} sn bekleniyor...[/bold red]")
-                    time.sleep(5 * (deneme+1))
+                    rprint(f"[bold red]❌ Siteden video kaynağı sökülemedi, bekleniyor...[/bold red]")
+                    time.sleep(3 * (deneme + 1))
                 deneme += 1
-                
+
             if not basarili:
-                rprint(f"[bold red]❌ Kaynak bulunamadi veya zaman asimi kırılamadı: Sezon {current_s} Bolum {current_b}[/bold red]")
+                ardisik_hata += 1
+                rprint(f"[bold red]❌ Kaynak bulunamadı: Sezon {current_s} Bölüm {current_b}[/bold red]")
                 OPERASYON_RAPORU.append((dosya_adi, "MP4", "BULUNAMADI", "red"))
-            
-            if current_s == s_bit and current_b == b_bit: break
+
+            if current_s == s_bit and current_b == b_bit:
+                break
+
             current_b += 1
-            if current_b > 30 and current_s < s_bit: 
+            # Eğer 3 ardışık bölüm bulunamadıysa muhtemelen sezon bitti
+            if ardisik_hata >= 3 and current_s < s_bit:
+                rprint(f"[bold yellow]ℹ️ Sezon {current_s} tamamlandı görünüyor. Sezon {current_s + 1}'e geçiliyor...[/bold yellow]")
                 current_s += 1
                 current_b = 1
+                ardisik_hata = 0
 
     elif secim == "2":
-        rprint("\n[bold yellow]✍ Indirmek istediginiz video linklerini girin.[/bold yellow]")
-        rprint("[bold dim]Baslatmak icin bos birakip Enter'a basin.[/bold dim]")
+        rprint("\n[bold yellow]✍ İndirmek istediğiniz video linklerini girin.[/bold yellow]")
+        rprint("[bold dim]Başlatmak için boş bırakıp Enter'a basın.[/bold dim]")
         linkler = []
         while True:
             l = console.input(f"[bold cyan]-> {len(linkler)+1}. Link: [/bold cyan]").strip()
-            if not l: break
+            if not l:
+                break
             linkler.append(l)
-            
+
         for i, link in enumerate(linkler):
-            if "youtube.com" in link or "youtu.be" in link or "instagram.com" in link or "tiktok.com" in link:
+            if any(dom in link for dom in ["youtube.com", "youtu.be", "instagram.com", "tiktok.com", "twitter.com", "x.com"]):
                 kayit_klasoru = klasor_hazirla("Sosyal Medya Videolari")
                 videoyu_indir_gelismis(link, kayit_klasoru, "%(title)s", sadece_ses=False, playlist_mi=False)
             else:
                 kayit_klasoru = klasor_hazirla("Filmler ve Tekli Videolar")
                 m3u8_url = m3u8_linki_yakala(link)
                 if m3u8_url:
-                    dosya = link.split("/")[-2] if link.endswith('/') else link.split("/")[-1]
-                    videoyu_indir_gelismis(m3u8_url, kayit_klasoru, dosya[:20], sadece_ses=False)
+                    ham_isim = link.rstrip("/").split("/")[-1]
+                    temiz_isim = dosya_adi_temizle(ham_isim, varsayilan=f"Video_{i+1}")
+                    videoyu_indir_gelismis(m3u8_url, kayit_klasoru, temiz_isim[:30], sadece_ses=False)
                 else:
-                    rprint("[bold red]❌ Siteden video kaynagi sokulemedi.[/bold red]")
+                    rprint("[bold red]❌ Siteden video kaynağı sökülemedi.[/bold red]")
 
     elif secim == "3":
-        rprint("\n[bold magenta]--- 🎵 MP3 MUZIK INDIRME KANALI ---[/bold magenta]")
-        rprint("[bold green][1][/bold green] Tekli YouTube Videosu (Sadece o videoyu MP3 yapar)")
-        rprint("[bold green][2][/bold green] YouTube Playlist / Mix Linki (Tüm listeyi sırayla MP3 yapar)")
-        rprint("[bold green][3][/bold green] Spotify Sarki / Playlist Linki (Otomatik MP3 indirir)")
-        
+        rprint("\n[bold magenta]--- 🎵 MP3 MÜZİK İNDİRME KANALI ---[/bold magenta]")
+        rprint("[bold green][1][/bold green] Tekli YouTube Videosu / Şarkısı (MP3)")
+        rprint("[bold green][2][/bold green] YouTube Playlist / Oynatma Listesi (Toplu MP3)")
+        rprint("[bold green][3][/bold green] Spotify Şarkı / Parça Linki (Otomatik MP3 İndirir)")
+
         m_secim = console.input("\n[bold cyan]Müzik Modu Seçiniz (1/2/3): [/bold cyan]").strip()
         kayit_klasoru = klasor_hazirla("Indirilen_Muzikler")
-        
+
         if m_secim == "1":
             link = console.input("[bold yellow]✍ Tekli YouTube Video Linki: [/bold yellow]").strip()
             videoyu_indir_gelismis(link, kayit_klasoru, "%(title)s", sadece_ses=True, playlist_mi=False)
         elif m_secim == "2":
-            link = console.input("[bold yellow]✍ YouTube Playlist / Mix Linki: [/bold yellow]").strip()
+            link = console.input("[bold yellow]✍ YouTube Playlist Linki: [/bold yellow]").strip()
             videoyu_indir_gelismis(link, kayit_klasoru, "%(title)s", sadece_ses=True, playlist_mi=True)
         elif m_secim == "3":
-            link = console.input("[bold yellow]✍ Spotify Linki: [/bold yellow]").strip()
-            videoyu_indir_gelismis(f"ytsearch:{link}", kayit_klasoru, "%(title)s", sadece_ses=True, playlist_mi=False)
+            link = console.input("[bold yellow]✍ Spotify Şarkı Linki: [/bold yellow]").strip()
+            if "spotify.com" in link:
+                arama_terimi = spotify_bilgisi_al(link)
+                rprint(f"[bold cyan]🔍 Spotify üzerinden aranan parça:[/bold cyan] {arama_terimi}")
+                videoyu_indir_gelismis(f"ytsearch1:{arama_terimi}", kayit_klasoru, "%(title)s", sadece_ses=True, playlist_mi=False)
+            else:
+                videoyu_indir_gelismis(f"ytsearch1:{link}", kayit_klasoru, "%(title)s", sadece_ses=True, playlist_mi=False)
 
     final_raporu_yazdir()
     rprint("\n[bold green]=========================================[/bold green]")
     rprint("[bold gold1]       GOKTURK OPERASYONU BASARIYLA BITTI       [/bold gold1]")
     rprint("[bold green]=========================================[/bold green]")
-    console.input("\n[bold white]Kapatmak icin Enter'a basin...[/bold white]")
+    console.input("\n[bold white]Kapatmak için Enter'a basın...[/bold white]")
+
+
+if __name__ == "__main__":
+    main()
