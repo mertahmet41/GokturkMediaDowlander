@@ -1,51 +1,54 @@
 # Göktürk Medya İndirme Merkezi — Kullanım Kılavuzu
 
-Bu kılavuzda Göktürk Medya İndirme Merkezi'nin temel çalışma modları ve pratik kullanım adımları anlatılmaktadır.
+Göktürk Medya İndirme Merkezi hem **Modern Grafik Arayüz (GUI)** hem de **Komut Satırı (CLI)** üzerinden kullanılabilir.
 
 ---
 
-## 🚀 Başlatma
+## 🚀 1. Başlatma Seçenekleri
 
-1. **Doğrudan Başlatma:**
-   ```bash
-   python main.py
-   # veya
-   python otuken.py
-   ```
-2. **Windows Kısayolu:**
-   - Kurulum sihirbazını (`kurulum.bat`) çalıştırdıysanız masaüstünüzdeki **"Gokturk Dizi Indirici"** kısayoluna çift tıklayın.
+### Seçenek A: Taşınabilir `.exe` ile (En Kolay)
+- [GitHub Releases](https://github.com/mertahmet41/GokturkMediaDowlander/releases) sayfasından indirilen `GokturkMediaDownloader.exe` dosyasına çift tıklayın.
+- Herhangi bir Python veya ek kurulum gerektirmez, doğrudan açılır.
 
----
+### Seçenek B: Python ile Başlatma
+```bash
+# Grafik Arayüzü Başlat
+python main.py
+# veya
+python gui.py
 
-## 🎬 1. Dizi Modu (Akıllı Sezon / Bölüm İndirme)
-
-- Dizi izleme sitelerindeki herhangi bir bölüm linkini yapıştırın:
-  `Örnek: https://ornekdizi.com/dizi/better-call-saul-1-sezon-1-bolum`
-- Program dizinin adını, sezon ve bölümünü otomatik tespit eder.
-- Başlangıç ve bitiş sezon/bölüm aralığını girin.
-- Playwright botu arka planda sayfayı yükler, video oynatıcısını tetikler ve gizli `.m3u8` medya akışını yakalayarak sırayla indirir.
-- İndirilen dosyalar otomatik olarak şu hiyerarşide saklanır:
-  `Masaüstü > Indirilen_Mediyalar > [Dizi Adı] > Sezon [X] > Sezon_X_Bolum_Y.mp4`
+# Komut Satırı (Terminal) Modunu Başlat
+python main.py --cli
+```
 
 ---
 
-## 🎥 2. Doğrudan Video / Film Modu
+## 💻 2. Grafik Arayüz (GUI) Kullanımı
 
-- **Desteklenen Platformlar:** YouTube, Instagram Reels, TikTok, Twitter/X ve doğrudan video oynatıcı barındıran film siteleri.
-- İstediğiniz kadar linki alt alta yapıştırın. Boş bırakıp `Enter` tuşuna bastığınızda toplu indirme başlar.
-- Sosyal medya videoları `Indirilen_Mediyalar/Sosyal Medya Videolari` klasörüne, filmler ise `Indirilen_Mediyalar/Filmler ve Tekli Videolar` klasörüne kaydedilir.
+### 📺 Dizi İndirme Sekmesi:
+1. Dizi izleme sitelerindeki herhangi bir bölüm linkini yapıştırın:
+   *(Örn: `https://ornekdizi.com/dizi/better-call-saul-1-sezon-1-bolum`)*
+2. Program dizinin adını, sezon ve bölümünü otomatik tespit eder.
+3. İndirmek istediğiniz **Başlangıç/Bitiş Sezon ve Bölümlerini** belirleyin.
+4. **"🚀 Bölümleri Sırayla İndir"** butonuna basın.
+5. Arka plan botu gizli `.m3u8` akışını yakalayıp bölümleri sırayla indirecektir.
+
+### 🎬 Video & Film İndirme Sekmesi:
+1. İndirmek istediğiniz linkleri kutuya alt alta yapıştırın:
+   *(YouTube, Instagram Reels, TikTok, Twitter/X veya doğrudan film linkleri)*
+2. Kalite / Format menüsünden çözünürlüğü seçin (En İyi, 1080p, 720p veya Sadece Ses MP3).
+3. **"📥 Seçilen Videoları İndir"** butonuna basın.
+
+### 🎵 Müzik İndirme (MP3) Sekmesi:
+1. Tekli YouTube videosu, oynatma listesi (playlist) veya Spotify şarkı linkini yapıştırın.
+2. Kalite menüsünden 192kbps veya 320kbps seçin.
+3. **"🎵 MP3 Olarak Dönüştür ve İndir"** butonuna basın.
+
+### ⚙️ Ayarlar Sekmesi:
+- **İndirme Konumu:** "📂 Gözat" butonuna basarak medyaların indirileceği klasörü değiştirebilirsiniz.
+- **Klasörü Aç:** İndirilenlerin bulunduğu klasörü doğrudan Windows Gezgini'nde açar.
 
 ---
 
-## 🎵 3. Müzik İndirme Modu (MP3)
-
-1. **Tekli YouTube Videosu:** Video linkini girin; otomatik olarak en yüksek kalitede 192kbps MP3 olarak dönüştürülüp indirilir.
-2. **YouTube Playlist / Mix:** Çalma listesi linkini yapıştırın; listedeki tüm parçalar tek tek sırayla indirilir.
-3. **Spotify Şarkı Linki:** `https://open.spotify.com/track/...` linkini yapıştırın; sistem şarkı adını ve sanatçısını otomatik çözer, YouTube müzik kaynaklarından bularak MP3 olarak kaydeder.
-
----
-
-## ⚙️ 4. Ayarlar (İndirme Dizinini Değiştirme)
-
-- Menüden `4` seçeneğini seçerek medyaların kaydedileceği varsayılan klasör yolunu istediğiniz disk veya klasörle güncelleyebilirsiniz.
-- Ayarlar `%APPDATA%\GokturkMediaDownloader\config.json` dosyasına kaydedilir.
+## 🛑 İndirmeyi İptal Etme
+İndirme sırasında pencerenin altındaki kırmızı **"⏹️ İndirmeyi Durdur"** butonuna basarak işlemi güvenle durdurabilirsiniz.

@@ -9,6 +9,11 @@ venv/
 .venv/
 ENV/
 
+# PyInstaller / Build
+build/
+dist/
+*.spec
+
 # Downloads / User Output
 Indirilen_Mediyalar/
 Indirilen_Muzikler/

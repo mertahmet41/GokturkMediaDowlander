@@ -1,14 +1,33 @@
-# 🛰️ Göktürk Medya İndirme Merkezi (v5.0)
+# 🛰️ Göktürk Medya İndirme Merkezi (v6.0)
 
 [![GitHub Release](https://img.shields.io/github/v/release/mertahmet41/GokturkMediaDowlander?color=blue&label=Son%20S%C3%BCr%C3%BCm)](https://github.com/mertahmet41/GokturkMediaDowlander/releases)
-[![Python](https://img.shields.io/badge/Python-3.8%2B-blue)](https://www.python.org/)
-[![Engine](https://img.shields.io/badge/Motor-Playwright%20%7C%20yt--dlp-green)](#)
-[![UI](https://img.shields.io/badge/Aray%C3%BCz-Rich%20CLI-magenta)](#)
+[![GUI](https://img.shields.io/badge/Aray%C3%BCz-CustomTkinter%20GUI-cyan)](#)
+[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Ta%C5%9F%C4%B1nabilir%20.EXE-brightgreen)](https://github.com/mertahmet41/GokturkMediaDowlander/releases/latest)
 [![Tests](https://img.shields.io/badge/Testler-5%2F5%20Ge%C3%A7ti-brightgreen)](#)
 
-**Göktürk Medya İndirme Merkezi**; dizi, film, sosyal medya videoları (YouTube, Instagram, TikTok, Twitter/X) ve müzikleri yüksek hızda, otomatik ve toplu olarak indirmek için geliştirilmiş gelişmiş bir **Siber İndirme İstasyonudur**.
+**Göktürk Medya İndirme Merkezi**; dizi, film, sosyal medya videoları (YouTube, Instagram, TikTok, Twitter/X) ve müzikleri yüksek hızda, otomatik ve toplu olarak indirmek için geliştirilmiş **Modern Grafik Arayüze (GUI)** sahip bağımsız bir **Siber İndirme İstasyonudur**.
 
-Gelişmiş web kazıma (web scraping) ve ağ trafiği koklama (network sniffing) yetenekleri sayesinde gizli kaynak `.m3u8` medya akışlarını arka planda otomatik olarak yakalar, çözer ve yüksek kalitede bilgisayarınıza indirir.
+---
+
+## ⚡ Hızlı Başlangıç (Kurulumsuz Taşınabilir .EXE)
+
+Herhangi bir Python veya ek kütüphane kurulumu yapmadan tek tıkla kullanmak için:
+
+👉 **[GokturkMediaDownloader.exe İndir (v6.0)](https://github.com/mertahmet41/GokturkMediaDowlander/releases/latest)**
+
+*İndirin, çift tıklayın ve doğrudan kullanmaya başlayın!*
+
+---
+
+## 🖥️ Modern Grafik Arayüz (GUI) Özellikleri
+
+- 🎨 **Modern Koyu Tema (Dark Mode):** Siber mavi ve gri tonlarında göz yormayan çağdaş masaüstü deneyimi.
+- 📺 **Akıllı Dizi İndirici:** Bölüm linkini yapıştırdığınız an dizi adı, sezon ve bölüm otomatik algılanır. İstediğiniz sezon/bölüm aralığını tek tıkla sırayla indirir.
+- 🎬 **Toplu Video & Film İndirici:** YouTube, Instagram Reels, TikTok, Twitter/X ve gizli `.m3u8` oynatıcılı film sitelerinden çoklu link indirme.
+- 🎵 **Müzik (MP3) Çözümleyici:** YouTube ve Spotify şarkı linklerini otomatik yüksek kaliteli 192kbps/320kbps MP3 ses dosyasına dönüştürür.
+- 📊 **Canlı İlerleme Çubuğu ve Hız Göstergesi:** İndirme yüzdesi, anlık transfer hızı (MB/s) ve kalan süre canlı görüntülenir.
+- ⏹️ **Tek Tıkla İptal:** İstenildiğinde çalışan indirmeyi güvenle durdurma butonu.
+- 📂 **Entegre Klasör Yöneticisi:** Medyaların kaydedileceği dizini seçme ve indirilenler klasörünü tek tıkla Windows Gezgini'nde açma.
 
 ---
 
@@ -16,117 +35,58 @@ Gelişmiş web kazıma (web scraping) ve ağ trafiği koklama (network sniffing)
 
 ```mermaid
 flowchart TD
-    subgraph Input ["Kullanıcı Girişi"]
-        M1["1. Dizi Modu (Bölüm URL'si)"]
-        M2["2. Video / Film Modu (URL Listesi)"]
-        M3["3. Müzik Modu (YouTube / Spotify)"]
+    subgraph UI ["Modern Grafik Arayüz (CustomTkinter GUI)"]
+        TabSeries["📺 Dizi İndirme"]
+        TabVideo["🎬 Video & Film"]
+        TabMusic["🎵 Müzik (MP3)"]
+        TabSettings["⚙️ Ayarlar"]
     end
 
-    subgraph Sniffer ["Akıllı Ağ & Kaynak Koklama"]
-        PW["Playwright Chromium (Headless Bot)"]
-        M3U8["Gizli .m3u8 & MPEG-URL Yakalayıcı"]
+    subgraph Core ["Arka Plan İş Parçacığı (Worker Thread)"]
+        Sniffer["Playwright Chromium Gizli .m3u8 Koklayıcı"]
         SpotAPI["Spotify oEmbed API Çözümleyici"]
+        Downloader["yt-dlp Çekirdek İndirme Motoru"]
     end
 
-    subgraph Engine ["İndirme ve Birleştirme Motoru"]
-        YTDL["yt-dlp Çekirdeği (Zaman Aşımı Korumalı)"]
-        FFMPEG["FFmpeg (Video/Ses Birleştirme & MP3 Dönüştürme)"]
-        HOOK["Rich Güvenli İlerleme Çubuğu Kancası"]
+    subgraph Output ["Düzenli Dosya Sistemi"]
+        Storage["Masaüstü / Indirilen_Mediyalar"]
     end
 
-    subgraph Storage ["Düzenli Depolama"]
-        DirSeries["Masaüstü / Indirilen_Mediyalar / Dizi Adı / Sezon X"]
-        DirMovies["Masaüstü / Indirilen_Mediyalar / Filmler"]
-        DirMusic["Masaüstü / Indirilen_Mediyalar / Indirilen_Muzikler"]
-    end
-
-    M1 --> PW --> M3U8 --> YTDL
-    M2 --> YTDL
-    M3 --> SpotAPI --> YTDL
-    YTDL --> FFMPEG --> Storage
-    YTDL --> HOOK
+    TabSeries --> Sniffer --> Downloader
+    TabVideo --> Downloader
+    TabMusic --> SpotAPI --> Downloader
+    Downloader --> Storage
 ```
 
 ---
 
-## 🔥 v5.0 ile Gelen Yenilikler ve Çözülen Sorunlar
+## 📦 Sürüm Geçmişi
 
-Önceki sürümdeki (`v4.5`) kritik hatalar tespit edilerek tamamen giderildi:
-
-1. **İlerleme Çubuğu Çökmesi Giderildi (`KeyError: 'info_dict'`):**
-   - HLS/m3u8 parçaları indirilirken `info_dict` anahtarı bulunmadığında uygulamanın donmasına/kapanmasına yol açan hata giderildi.
-2. **Windows Dosya Adı Karakter Hatası (`[Errno 22]`) Çözüldü:**
-   - Linklerde veya başlıklarda yer alan `?`, `:`, `*`, `"`, `<`, `>`, `|` karakterleri filtrelenerek indirme işlemi güvene alındı.
-3. **M3U8 Playlist Filtresi Düzeltildi:**
-   - Önceden `"playlist"` kelimesi içeren tüm akışlar filtrelendiği için birçok sitede video linki yakalanamıyordu. Bu engel kaldırıldı ve gerçek video akışları garantiye alındı.
-4. **Spotify İndirme Altyapısı Yenilendi:**
-   - Spotify linkleri resmi Spotify oEmbed API ile taranarak parça adı ve sanatçı bilgisiyle eşleştirildi, yüksek kaliteli MP3 indirmesi sağlandı.
-5. **Windows Türkçe Terminal Encoding Hatası (`UnicodeEncodeError`) Düzeltildi:**
-   - `✓`, `⚡`, `🚀` gibi karakterlerin Windows Türkçe terminallerinde (CP1254) sebep olduğu çökme `sys.stdout.reconfigure(encoding='utf-8')` ile çözüldü.
-6. **Dizi İsmi Ayrıştırma Optimizasyonu:**
-   - Örnek bölüm linklerinden dizi adı süzülürken sezon ve bölüm numaralarının dizi ismine yapışması düzeltildi.
-
----
-
-## 📦 Sürüm Geçmişi ve Eski Sürüm (v4.5)
-
-Kullanıcılarımızın önceki kod yapısını inceleyebilmesi için eski sürüm de depoda saklanmaktadır:
-
-| Sürüm | Durum | Açıklama | Kaynak Kodu |
+| Sürüm | Tür | Öne Çıkan Özellikler | Durum |
 | :--- | :--- | :--- | :--- |
-| **[v5.0 (Latest)](https://github.com/mertahmet41/GokturkMediaDowlander/releases/tag/v5.0)** | **Güncel & Kararlı** | Tüm hatalar giderildi, Spotify ve m3u8 iyileştirildi, birim testler eklendi | [Ana Dizin](.) |
-| **[v4.5 (Legacy)](https://github.com/mertahmet41/GokturkMediaDowlander/releases/tag/v4.5)** | Arşiv (Eski Sürüm) | İlk prototip sürüm (orijinal haliyle korundu) | [archive/v4.5-legacy](archive/v4.5-legacy) |
-
-> Ayrıntılı sürüm notları için **[docs/CHANGELOG.md](docs/CHANGELOG.md)** dosyasını inceleyebilirsiniz.
-
----
-
-## 📂 Depo Dizin Yapısı
-
-```text
-GokturkMediaDownloader/
-├── .gitignore                # Geçici ve medya dosyaları filtresi
-├── README.md                 # Proje tanıtım ve kılavuz dokümanı
-├── requirements.txt          # Gerekli Python kütüphaneleri
-├── otuken.py                 # Hataları giderilmiş ve optimize edilmiş ana motor
-├── main.py                   # Standart Python giriş noktası
-├── calistir.bat              # Windows terminal başlatıcısı
-├── kurulum.bat               # Windows otomatik kurulum sihirbazı
-├── kaldir.bat                # Windows temiz kaldırma aracı (Uninstaller)
-├── archive/                  # Eski sürümlerin korunduğu arşiv
-│   └── v4.5-legacy/          # v4.5 sürümünün orijinal dosyaları
-├── docs/                     # Ayrıntılı dokümantasyon
-│   ├── CHANGELOG.md          # Sürüm ve hata düzeltme günlüğü
-│   └── KULLANIM.md           # Adım adım detaylı kullanım kılavuzu
-└── tests/                    # Otomatik birim testleri
-    └── test_core.py          # Çekirdek fonksiyon testleri
-```
+| **[v6.0](https://github.com/mertahmet41/GokturkMediaDowlander/releases/tag/v6.0)** | **GUI & Portable .EXE** | Modern CustomTkinter masaüstü arayüzü, bağımsız tek dosya `.exe`, arka plan thread desteği | **Güncel (Latest)** |
+| **[v5.0](https://github.com/mertahmet41/GokturkMediaDowlander/releases/tag/v5.0)** | CLI & Core Fixes | KeyError, Windows dosya adı, m3u8 playlist filtresi ve Spotify düzeltmeleri | Arşiv |
+| **[v4.5](https://github.com/mertahmet41/GokturkMediaDowlander/releases/tag/v4.5)** | CLI (Legacy) | İlk kamuya açık prototip sürüm ([archive/v4.5-legacy](archive/v4.5-legacy)) | Arşiv |
 
 ---
 
-## 🛠️ Kurulum ve Çalıştırma
+## 🛠️ Kaynak Koddan Çalıştırma (Geliştiriciler İçin)
 
-### Otomatik Kurulum (Windows):
-1. `kurulum.bat` dosyasına sağ tıklayıp **Yönetici Olarak Çalıştır**'ı seçin.
-2. Sihirbaz Python kütüphanelerini, Playwright Chromium motorunu ve FFmpeg'i kurup masaüstünüze kısayol oluşturacaktır.
-
-### Manuel Kurulum:
 ```bash
-# 1. Bağımlılıkları yükleyin
+# 1. Depoyu klonlayın
+git clone https://github.com/mertahmet41/GokturkMediaDowlander.git
+cd GokturkMediaDowlander
+
+# 2. Bağımlılıkları yükleyin
 pip install -r requirements.txt
 
-# 2. Playwright Chromium motorunu kurun
+# 3. Playwright tarayıcı motorunu kurun
 playwright install chromium
 
-# 3. Programı başlatın
+# 4. Grafik arayüzü başlatın
 python main.py
-# veya
-python otuken.py
-```
-
-### Testleri Çalıştırma:
-```bash
-python tests/test_core.py
+# veya Komut Satırı modu için:
+python main.py --cli
 ```
 
 ---

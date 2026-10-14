@@ -4,7 +4,26 @@ Bu dokümanda projenin tüm sürüm geçmişi, yapılan hata düzeltmeleri ve ge
 
 ---
 
-## [5.0.0] - 2026-10-14 (Güncel Sürüm)
+## [6.0.0] - 2026-10-14 (Güncel Sürüm — Modern GUI & Portable .EXE)
+
+### 🚀 Öne Çıkan Yenilikler:
+1. **Modern Grafik Arayüz (CustomTkinter GUI):**
+   - Koyu tema (Dark Mode) ve modern siber mavi temalı şık masaüstü arayüzü eklendi (`gui.py`).
+   - Çoklu sekme yapısı:
+     - 📺 **Dizi İndir:** Otomatik dizi ve sezon algılama, aralık belirleme, canlı indirme.
+     - 🎬 **Video & Film İndir:** Çoklu link kutusu, kalite seçimi (1080p, 720p, Best, MP3).
+     - 🎵 **Müzik (MP3) İndir:** YouTube/Spotify arama ve indirme, bitrate seçimi (192kbps / 320kbps).
+     - ⚙️ **Ayarlar:** Klasör seçici (Browse), tek tıkla klasör açma, kategori klasörleme anahtarı.
+2. **Taşınabilir Tek Dosya Windows Uygulaması (`GokturkMediaDownloader.exe`):**
+   - Python veya kütüphane kurulumu gerektirmeyen, doğrudan çift tıklamayla çalışan bağımsız (portable) `.exe` derlendi ve GitHub Releases varlığı olarak eklendi.
+3. **Arka Plan Threading & İptal Desteği:**
+   - İndirmeler GUI'yi dondurmayan arka plan thread'lerinde çalışır. Canlı yüzde, hız (MB/s) göstergesi ve "İndirmeyi Durdur" butonu eklendi.
+4. **Katlanabilir Canlı Konsol Log Alanı:**
+   - Arka planda çalışan işlemler tek tıkla açılıp kapanabilen log kutusundan canlı takip edilebilir.
+
+---
+
+## [5.0.0] - 2026-10-14 (Hata Düzeltmeleri & Çekirdek İyileştirme)
 
 ### 🐛 Düzeltilen Kritik Hatalar:
 1. **İlerleme Çubuğu `KeyError: 'info_dict'` Çökmesi Düzeltildi:**
