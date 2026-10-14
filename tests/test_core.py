@@ -42,6 +42,25 @@ class TestGokturkCore(unittest.TestCase):
         self.assertEqual(b2, 5)
         self.assertEqual(dizi2, "Better Call Saul")
 
+        # Domain sayılar içeren siteler (dizipal942.com)
+        url3 = "https://dizipal942.com/dizi/yali-capkini-54-bolum"
+        sablon3, s3, b3, dizi3 = link_sablonu_olustur(url3)
+        self.assertEqual(s3, 1)
+        self.assertEqual(b3, 54)
+        self.assertEqual(dizi3, "Yali Capkini")
+        self.assertIn("dizipal942.com", sablon3)
+        self.assertIn("{bolum}", sablon3)
+
+        # S04E02 sıfır dolgulu format
+        url4 = "https://hdfilmcehennemi15.net/dizi/stranger-things-s04e02"
+        sablon4, s4, b4, dizi4 = link_sablonu_olustur(url4)
+        self.assertEqual(s4, 4)
+        self.assertEqual(b4, 2)
+        self.assertEqual(dizi4, "Stranger Things")
+        self.assertIn("hdfilmcehennemi15.net", sablon4)
+        formatted = sablon4.format(sezon=s4, bolum=b4+1)
+        self.assertIn("s04e03", formatted)
+
     def test_make_progress_hook_no_crash(self):
         # Sahte bir progress nesnesi
         class DummyProgress:

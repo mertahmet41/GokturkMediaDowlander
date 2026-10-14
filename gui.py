@@ -3,6 +3,7 @@ import sys
 import re
 import time
 import json
+import shutil
 import threading
 import queue
 import urllib.request
@@ -170,25 +171,47 @@ class GokturkApp(ctk.CTk):
         )
         info_lbl.pack(fill="x", pady=(0, 6))
 
+        url_row = ctk.CTkFrame(container, fg_color="transparent")
+        url_row.pack(fill="x", pady=4)
+
         self.entry_dizi_url = ctk.CTkEntry(
-            container,
+            url_row,
             placeholder_text="https://ornekdizi.com/dizi/better-call-saul-1-sezon-1-bolum",
             height=38
         )
-        self.entry_dizi_url.pack(fill="x", pady=4)
+        self.entry_dizi_url.pack(side="left", fill="x", expand=True, padx=(0, 8))
         self.entry_dizi_url.bind("<KeyRelease>", self.on_dizi_url_changed)
+        self.entry_dizi_url.bind("<FocusOut>", self.on_dizi_url_changed)
+
+        self.btn_parse_dizi = ctk.CTkButton(
+            url_row,
+            text="🔍 Çözümle",
+            width=100,
+            height=38,
+            fg_color="#3b82f6",
+            hover_color="#2563eb",
+            command=self.on_dizi_url_changed
+        )
+        self.btn_parse_dizi.pack(side="right")
 
         # Algılanan Dizi Kartı
         self.detected_frame = ctk.CTkFrame(container, fg_color=("#1e293b", "#0f172a"), corner_radius=8)
         self.detected_frame.pack(fill="x", pady=10)
 
+        dizi_name_row = ctk.CTkFrame(self.detected_frame, fg_color="transparent")
+        dizi_name_row.pack(fill="x", padx=14, pady=(8, 4))
+        ctk.CTkLabel(dizi_name_row, text="Dizi Adı (Klasör Adı):", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left", padx=(0, 8))
+        self.entry_dizi_adi = ctk.CTkEntry(dizi_name_row, height=30, placeholder_text="Dizi Adı")
+        self.entry_dizi_adi.pack(side="left", fill="x", expand=True)
+
         self.lbl_detected = ctk.CTkLabel(
             self.detected_frame,
-            text="Algılanan Dizi: Henüz link girilmedi",
-            font=ctk.CTkFont(size=13, weight="bold"),
-            text_color="#38bdf8"
+            text="Algılanan Durum: Henüz link girilmedi",
+            font=ctk.CTkFont(size=12),
+            text_color="#38bdf8",
+            anchor="w"
         )
-        self.lbl_detected.pack(padx=14, pady=8, anchor="w")
+        self.lbl_detected.pack(padx=14, pady=(2, 8), fill="x")
 
         # Sezon ve Bölüm Aralığı Grid
         range_frame = ctk.CTkFrame(container, fg_color="transparent")
@@ -399,16 +422,21 @@ class GokturkApp(ctk.CTk):
         url = self.entry_dizi_url.get().strip()
         if len(url) > 10:
             sablon, s, b, dizi_adi = link_sablonu_olustur(url)
-            if sablon and s is not None and b is not None:
-                self.lbl_detected.configure(text=f"Algılanan Dizi: {dizi_adi} | Sezon: {s} | Bölüm: {b}")
+            if sablon and b is not None:
+                self.entry_dizi_adi.delete(0, "end")
+                self.entry_dizi_adi.insert(0, dizi_adi)
+                s_val = s if s is not None else 1
+                self.lbl_detected.configure(text=f"✓ Çözümlendi: Dizi: {dizi_adi} | Sezon: {s_val} | Bölüm: {b}")
                 self.entry_s_bas.delete(0, "end")
-                self.entry_s_bas.insert(0, str(s))
+                self.entry_s_bas.insert(0, str(s_val))
                 self.entry_b_bas.delete(0, "end")
                 self.entry_b_bas.insert(0, str(b))
                 self.entry_s_bit.delete(0, "end")
-                self.entry_s_bit.insert(0, str(s))
+                self.entry_s_bit.insert(0, str(s_val))
                 self.entry_b_bit.delete(0, "end")
                 self.entry_b_bit.insert(0, str(b + 5))
+            else:
+                self.lbl_detected.configure(text="[!] Link formatından bölüm algılanamadı, lütfen geçerli bir link girin.")
 
     def set_download_state(self, downloading=True):
         self.is_downloading = downloading
@@ -443,10 +471,12 @@ class GokturkApp(ctk.CTk):
             messagebox.showwarning("Eksik Bilgi", "Lütfen bir bölüm linki girin.")
             return
 
-        sablon, o_s, o_b, dizi_adi = link_sablonu_olustur(url)
+        sablon, o_s, o_b, oto_dizi_adi = link_sablonu_olustur(url)
         if not sablon:
             messagebox.showerror("Hata", "Link formatından sezon ve bölüm çıkarılamadı!")
             return
+
+        dizi_adi = self.entry_dizi_adi.get().strip() or oto_dizi_adi
 
         try:
             s_bas = int(self.entry_s_bas.get().strip())
@@ -465,7 +495,11 @@ class GokturkApp(ctk.CTk):
         ardisik_hata = 0
 
         while not self.cancel_requested:
-            url = sablon.format(sezon=curr_s, bolum=curr_b)
+            try:
+                url = sablon.format(sezon=curr_s, bolum=curr_b)
+            except Exception:
+                url = sablon.replace("{sezon}", str(curr_s)).replace("{bolum}", str(curr_b))
+
             dosya_adi = f"Sezon_{curr_s}_Bolum_{curr_b}"
             klasor = os.path.join(self.indirme_dizini, dosya_adi_temizle(dizi_adi), f"Sezon {curr_s}")
             os.makedirs(klasor, exist_ok=True)
@@ -484,10 +518,16 @@ class GokturkApp(ctk.CTk):
                     self.log(f"[-] İndirme başarısız: Sezon {curr_s} Bölüm {curr_b}")
                     ardisik_hata += 1
             else:
-                self.log(f"[!] Kaynak bulunamadı: Sezon {curr_s} Bölüm {curr_b}")
-                ardisik_hata += 1
+                self.log(f"[..] Doğrudan bağlantı ile deneniyor...")
+                basarili = self._indir_ytdlp(url, klasor, dosya_adi, sadece_ses=False)
+                if basarili:
+                    self.log(f"[TAMAMLANDI] Sezon {curr_s} Bölüm {curr_b} başarıyla indirildi.")
+                    ardisik_hata = 0
+                else:
+                    self.log(f"[!] Kaynak bulunamadı: Sezon {curr_s} Bölüm {curr_b}")
+                    ardisik_hata += 1
 
-            if curr_s == s_bit and curr_b == b_bit:
+            if curr_s >= s_bit and curr_b >= b_bit:
                 break
 
             curr_b += 1
@@ -513,6 +553,7 @@ class GokturkApp(ctk.CTk):
     def _worker_video(self, linkler, sadece_ses):
         toplam = len(linkler)
         self.log(f"[BAŞLATILDI] Toplu Video İndirme: {toplam} link işlenecek.")
+        kalite_secim = self.combo_video_quality.get()
 
         for i, link in enumerate(linkler):
             if self.cancel_requested:
@@ -525,17 +566,23 @@ class GokturkApp(ctk.CTk):
             if any(dom in link for dom in ["youtube.com", "youtu.be", "instagram.com", "tiktok.com", "twitter.com", "x.com"]):
                 klasor = os.path.join(self.indirme_dizini, "Sosyal Medya Videolari")
                 os.makedirs(klasor, exist_ok=True)
-                self._indir_ytdlp(link, klasor, "%(title)s", sadece_ses=sadece_ses)
+                basarili = self._indir_ytdlp(link, klasor, "%(title)s", sadece_ses=sadece_ses, format_secim=kalite_secim)
+                if basarili:
+                    self.log(f"[✓] Başarıyla tamamlandı: Link {i+1}")
             else:
                 klasor = os.path.join(self.indirme_dizini, "Filmler ve Videolar")
                 os.makedirs(klasor, exist_ok=True)
-                m3u8_url = m3u8_linki_yakala(link)
-                if m3u8_url:
-                    ham_isim = link.rstrip("/").split("/")[-1]
-                    temiz = dosya_adi_temizle(ham_isim, varsayilan=f"Video_{i+1}")
-                    self._indir_ytdlp(m3u8_url, klasor, temiz[:30], sadece_ses=sadece_ses)
-                else:
-                    self.log("[!] Siteden video akışı yakalanamadı.")
+                ham_isim = link.rstrip("/").split("/")[-1]
+                temiz = dosya_adi_temizle(ham_isim, varsayilan=f"Video_{i+1}")
+                basarili = self._indir_ytdlp(link, klasor, temiz[:35], sadece_ses=sadece_ses, format_secim=kalite_secim)
+                if not basarili:
+                    m3u8_url = m3u8_linki_yakala(link)
+                    if m3u8_url:
+                        basarili = self._indir_ytdlp(m3u8_url, klasor, temiz[:35], sadece_ses=sadece_ses, format_secim=kalite_secim)
+                    else:
+                        self.log("[!] Siteden video akışı yakalanamadı.")
+                if basarili:
+                    self.log(f"[✓] Başarıyla tamamlandı: Link {i+1}")
 
         self.log_queue.put({"status": "Tüm videolar indirildi!", "progress": 1.0})
         self.log("[BİTTİ] Toplu video indirme tamamlandı.")
@@ -581,7 +628,7 @@ class GokturkApp(ctk.CTk):
 
         self.set_download_state(False)
 
-    def _indir_ytdlp(self, url, klasor, dosya_adi, sadece_ses=False, bitrate="192", playlist_mi=False):
+    def _indir_ytdlp(self, url, klasor, dosya_adi, sadece_ses=False, bitrate="192", playlist_mi=False, format_secim="En İyi Kalite (Best MP4)"):
         cikis = os.path.join(klasor, f"{dosya_adi}.%(ext)s")
 
         def progress_hook(d):
@@ -613,20 +660,29 @@ class GokturkApp(ctk.CTk):
                     "status": "Dönüştürülüyor / Birleştiriliyor..."
                 })
 
+        js_runtimes = {}
+        if shutil.which("node"):
+            js_runtimes["node"] = {}
+        if shutil.which("deno"):
+            js_runtimes["deno"] = {}
+
         ydl_opts = {
             'outtmpl': cikis,
             'quiet': True,
             'no_warnings': True,
             'noprogress': True,
             'retries': 3,
+            'fragment_retries': 5,
             'timeout': 30,
             'progress_hooks': [progress_hook],
-            'http_headers': {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-                'Accept': '*/*',
-                'Accept-Language': 'tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7',
+            'extractor_args': {
+                'youtube': {
+                    'player_client': ['web_creator', 'ios', 'android', 'web', 'mweb']
+                }
             }
         }
+        if js_runtimes:
+            ydl_opts['js_runtimes'] = js_runtimes
 
         if playlist_mi:
             ydl_opts.update({'noplaylist': False, 'extract_flat': False})
@@ -643,8 +699,17 @@ class GokturkApp(ctk.CTk):
                 }],
             })
         else:
+            if "1080p" in format_secim:
+                fmt = 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best'
+            elif "720p" in format_secim:
+                fmt = 'bestvideo[height<=720]+bestaudio/best[height<=720]/best'
+            elif "480p" in format_secim:
+                fmt = 'bestvideo[height<=480]+bestaudio/best[height<=480]/best'
+            else:
+                fmt = 'bestvideo+bestaudio/best'
+
             ydl_opts.update({
-                'format': 'bestvideo+bestaudio/best',
+                'format': fmt,
                 'merge_output_format': 'mp4',
             })
 

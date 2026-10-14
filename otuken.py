@@ -3,6 +3,7 @@ import re
 import sys
 import time
 import json
+import shutil
 import urllib.request
 import urllib.parse
 from pathlib import Path
@@ -152,6 +153,12 @@ def videoyu_indir_gelismis(url, klasor_yolu, dosya_adi, sadece_ses=False, playli
     cikis_sablonu = os.path.join(klasor_yolu, f"{temiz_dosya}.%(ext)s")
     tipe_gore = "MP3" if sadece_ses else "MP4"
 
+    js_runtimes = {}
+    if shutil.which("node"):
+        js_runtimes["node"] = {}
+    if shutil.which("deno"):
+        js_runtimes["deno"] = {}
+
     ydl_opts = {
         'outtmpl': cikis_sablonu,
         'quiet': True,
@@ -161,12 +168,14 @@ def videoyu_indir_gelismis(url, klasor_yolu, dosya_adi, sadece_ses=False, playli
         'fragment_retries': 5,
         'ignoreerrors': True,
         'timeout': 30,
-        'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-            'Accept': '*/*',
-            'Accept-Language': 'tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7',
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['web_creator', 'ios', 'android', 'web', 'mweb']
+            }
         }
     }
+    if js_runtimes:
+        ydl_opts['js_runtimes'] = js_runtimes
 
     if playlist_mi:
         ydl_opts.update({'noplaylist': False, 'extract_flat': False})
@@ -298,46 +307,130 @@ def m3u8_linki_yakala(url):
     return yakalanan_link
 
 
+def _make_placeholder(name, orig_str):
+    if len(orig_str) > 1 and orig_str.startswith('0'):
+        return '{' + f'{name}:0{len(orig_str)}d' + '}'
+    return '{' + name + '}'
+
+
 def link_sablonu_olustur(ornek_link):
     """Örnek bölüm linkinden dizi adı, sezon ve bölüm şablonunu ayrıştırır."""
-    sayilar = re.findall(r'\d+', ornek_link)
-    if len(sayilar) < 2:
+    if not ornek_link or not ornek_link.strip():
         return None, None, None, "Dizi"
 
-    parcalar = [p for p in ornek_link.split('/') if p]
-    dizi_adi = "Bilinmeyen Dizi"
+    url = ornek_link.strip()
+    parsed = urllib.parse.urlsplit(url)
+    path = parsed.path
+    if not path or path == '/':
+        path = parsed.query
 
-    if "dizi" in parcalar:
-        idx = parcalar.index("dizi")
-        if idx + 1 < len(parcalar):
-            dizi_adi = parcalar[idx + 1]
-    else:
-        for p in parcalar:
-            if len(p) > 4 and ("-" in p or "_" in p) and "sezon" not in p and "bolum" not in p:
-                dizi_adi = p
-                break
+    path_decoded = urllib.parse.unquote(path)
 
-    # Dizi adından sezon ve bölüm ibarelerini temizle
-    dizi_adi = re.sub(r'(\d+)?[-_]?(sezon|season)[-_]?(\d+)?', '', dizi_adi, flags=re.IGNORECASE)
-    dizi_adi = re.sub(r'(\d+)?[-_]?(bolum|episode)[-_]?(\d+)?', '', dizi_adi, flags=re.IGNORECASE)
-    dizi_adi = dizi_adi.replace("-izle", "").replace("izle", "")
-    dizi_adi = re.sub(r'[-_]+', ' ', dizi_adi).strip().title()
-    if not dizi_adi:
-        dizi_adi = "Dizi"
+    s_val, b_val = None, None
+    s_span, b_span = None, None
+    s_orig, b_orig = "", ""
 
-    ornek_sezon, ornek_bolum = int(sayilar[-2]), int(sayilar[-1])
+    # 1. Compact: S01E02 or s1e2
+    m_se = re.search(r'[sS](\d+)[eE](\d+)', path_decoded)
+    if m_se:
+        s_orig, b_orig = m_se.group(1), m_se.group(2)
+        s_val, b_val = int(s_orig), int(b_orig)
+        s_span, b_span = m_se.span(1), m_se.span(2)
 
-    sablon_link = ornek_link
-    r_matches = list(re.finditer(r'\d+', ornek_link))
-    if len(r_matches) >= 2:
-        b_start, b_end = r_matches[-1].span()
-        sablon_link = sablon_link[:b_start] + "{bolum}" + sablon_link[b_end:]
+    # 2. 1x02 or 01x02
+    if s_val is None:
+        m_x = re.search(r'(?:^|[\/\-_])(\d+)[xX](\d+)(?:[\/\-_]|$)', path_decoded)
+        if m_x:
+            s_orig, b_orig = m_x.group(1), m_x.group(2)
+            s_val, b_val = int(s_orig), int(b_orig)
+            s_span, b_span = m_x.span(1), m_x.span(2)
 
-        r_matches2 = list(re.finditer(r'\d+', sablon_link))
-        s_start, s_end = r_matches2[-1].span()
-        sablon_link = sablon_link[:s_start] + "{sezon}" + sablon_link[s_end:]
+    # 3. Explicit keywords: sezon / season and bolum / episode
+    if s_val is None or b_val is None:
+        m_s_before = re.search(r'(?:^|[\/\-_])(\d+)[-_]?(?:sezon|season)(?:[\/\-_]|$)', path_decoded, re.IGNORECASE)
+        m_s_after = re.search(r'(?:sezon|season)[-_]?(\d+)(?:[\/\-_]|$)', path_decoded, re.IGNORECASE)
 
-    return sablon_link, ornek_sezon, ornek_bolum, dizi_adi
+        m_b_before = re.search(r'(?:^|[\/\-_])(\d+)[-_]?(?:bolum|bölüm|episode|ep)(?:[\/\-_]|$)', path_decoded, re.IGNORECASE)
+        m_b_after = re.search(r'(?:bolum|bölüm|episode|ep)[-_]?(\d+)(?:[\/\-_]|$)', path_decoded, re.IGNORECASE)
+
+        if s_val is None:
+            if m_s_before:
+                s_orig = m_s_before.group(1)
+                s_val = int(s_orig)
+                s_span = m_s_before.span(1)
+            elif m_s_after:
+                s_orig = m_s_after.group(1)
+                s_val = int(s_orig)
+                s_span = m_s_after.span(1)
+
+        if b_val is None:
+            if m_b_before:
+                b_orig = m_b_before.group(1)
+                b_val = int(b_orig)
+                b_span = m_b_before.span(1)
+            elif m_b_after:
+                b_orig = m_b_after.group(1)
+                b_val = int(b_orig)
+                b_span = m_b_after.span(1)
+
+    # 4. If episode found but season not found: default season=1
+    if b_val is not None and s_val is None:
+        s_val = 1
+        s_span = None
+
+    # 5. Fallback numbers in path (domain digits are strictly excluded)
+    if b_val is None:
+        num_matches = list(re.finditer(r'\d+', path_decoded))
+        if len(num_matches) >= 2:
+            s_match, b_match = num_matches[-2], num_matches[-1]
+            s_orig, b_orig = s_match.group(0), b_match.group(0)
+            s_val, b_val = int(s_orig), int(b_orig)
+            s_span, b_span = s_match.span(0), b_match.span(0)
+        elif len(num_matches) == 1:
+            b_match = num_matches[0]
+            b_orig = b_match.group(0)
+            s_val, b_val = 1, int(b_orig)
+            s_span, b_span = None, b_match.span(0)
+        else:
+            return None, None, None, "Dizi"
+
+    # Reconstruct template preserving domain and path
+    replacements = []
+    if b_span:
+        replacements.append((b_span[0], b_span[1], _make_placeholder("bolum", b_orig)))
+    if s_span and s_span != b_span:
+        replacements.append((s_span[0], s_span[1], _make_placeholder("sezon", s_orig)))
+
+    replacements.sort(key=lambda x: x[0], reverse=True)
+    new_path = path_decoded
+    for start, end, rep in replacements:
+        new_path = new_path[:start] + rep + new_path[end:]
+
+    sablon_link = urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, new_path, parsed.query, parsed.fragment))
+
+    # Extract clean series name
+    segments = [seg for seg in path_decoded.strip('/').split('/') if seg]
+    candidate = ''
+    for seg in segments:
+        seg_clean = re.sub(r'\.(html|php|mp4|m3u8|webm)$', '', seg, flags=re.IGNORECASE)
+        if seg_clean.lower() in ('dizi', 'diziler', 'watch', 'series', 'film', 'video', 'izle'):
+            continue
+        candidate = seg_clean
+        break
+
+    if not candidate and segments:
+        candidate = segments[-1]
+
+    candidate = re.sub(r'(\d+)?[-_]?(sezon|season)[-_]?(\d+)?', '', candidate, flags=re.IGNORECASE)
+    candidate = re.sub(r'(\d+)?[-_]?(bolum|bölüm|episode|ep)[-_]?(\d+)?', '', candidate, flags=re.IGNORECASE)
+    candidate = re.sub(r'[sS]\d+[eE]\d+', '', candidate)
+    candidate = re.sub(r'\d+[xX]\d+', '', candidate)
+    candidate = re.sub(r'[-_]?(izle|full|hd|1080p|720p|tek[-_]?parca|turkce[-_]?dublaj|altyazili)[-_]?', '', candidate, flags=re.IGNORECASE)
+    candidate = re.sub(r'\d+', '', candidate)
+    candidate = re.sub(r'[-_]+', ' ', candidate).strip().title()
+    dizi_adi = candidate if candidate else "Dizi"
+
+    return sablon_link, s_val, b_val, dizi_adi
 
 
 def guvenli_sayi_al(soru, varsayilan=1):

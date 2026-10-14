@@ -1,4 +1,4 @@
-# 🛰️ Göktürk Medya İndirme Merkezi (v6.0)
+# 🛰️ Göktürk Medya İndirme Merkezi (v6.0.1)
 
 [![GitHub Release](https://img.shields.io/github/v/release/mertahmet41/GokturkMediaDowlander?color=blue&label=Son%20S%C3%BCr%C3%BCm)](https://github.com/mertahmet41/GokturkMediaDowlander/releases)
 [![GUI](https://img.shields.io/badge/Aray%C3%BCz-CustomTkinter%20GUI-cyan)](#)
@@ -13,7 +13,7 @@
 
 Herhangi bir Python veya ek kütüphane kurulumu yapmadan tek tıkla kullanmak için:
 
-👉 **[GokturkMediaDownloader.exe İndir (v6.0)](https://github.com/mertahmet41/GokturkMediaDowlander/releases/latest)**
+👉 **[GokturkMediaDownloader.exe İndir (v6.0.1)](https://github.com/mertahmet41/GokturkMediaDowlander/releases/latest)**
 
 *İndirin, çift tıklayın ve doğrudan kullanmaya başlayın!*
 
@@ -22,8 +22,13 @@ Herhangi bir Python veya ek kütüphane kurulumu yapmadan tek tıkla kullanmak i
 ## 🖥️ Modern Grafik Arayüz (GUI) Özellikleri
 
 - 🎨 **Modern Koyu Tema (Dark Mode):** Siber mavi ve gri tonlarında göz yormayan çağdaş masaüstü deneyimi.
-- 📺 **Akıllı Dizi İndirici:** Bölüm linkini yapıştırdığınız an dizi adı, sezon ve bölüm otomatik algılanır. İstediğiniz sezon/bölüm aralığını tek tıkla sırayla indirir.
-- 🎬 **Toplu Video & Film İndirici:** YouTube, Instagram Reels, TikTok, Twitter/X ve gizli `.m3u8` oynatıcılı film sitelerinden çoklu link indirme.
+- 📺 **Gelişmiş Akıllı Dizi İndirici (v6.0.1):** 
+  - URL alanında domaindeki rakamlar (örn. `dizipal942.com`, `hdfilmcehennemi15.net`) korunur, URL bozulmaz.
+  - Tek bölümlü dizilerde sezon otomatik 1 kabul edilir. `S04E02` ve `1-sezon-2-bolum` gibi sıfır dolgulu formatlar tam desteklenir.
+  - Arayüzde **"Dizi Adı"** alanı artık düzenlenebilir; ayrıca tek tıkla **"🔍 Çözümle"** butonu eklenmiştir.
+- 🎬 **Toplu Video & Film İndirici (YouTube 403 Düzeltmesi):** 
+  - YouTube SABR istemci uyuşmazlığı ve HTTP 403 Forbidden hatası giderildi.
+  - En İyi Kalite, 1080p, 720p, 480p çözünürlük seçimi entegre edildi.
 - 🎵 **Müzik (MP3) Çözümleyici:** YouTube ve Spotify şarkı linklerini otomatik yüksek kaliteli 192kbps/320kbps MP3 ses dosyasına dönüştürür.
 - 📊 **Canlı İlerleme Çubuğu ve Hız Göstergesi:** İndirme yüzdesi, anlık transfer hızı (MB/s) ve kalan süre canlı görüntülenir.
 - ⏹️ **Tek Tıkla İptal:** İstenildiğinde çalışan indirmeyi güvenle durdurma butonu.
@@ -64,7 +69,8 @@ flowchart TD
 
 | Sürüm | Tür | Öne Çıkan Özellikler | Durum |
 | :--- | :--- | :--- | :--- |
-| **[v6.0](https://github.com/mertahmet41/GokturkMediaDowlander/releases/tag/v6.0)** | **GUI & Portable .EXE** | Modern CustomTkinter masaüstü arayüzü, bağımsız tek dosya `.exe`, arka plan thread desteği | **Güncel (Latest)** |
+| **[v6.0.1](https://github.com/mertahmet41/GokturkMediaDowlander/releases/tag/v6.0.1)** | **Hotfix & Stabilite** | YouTube HTTP 403 Forbidden hatası çözüldü, Akıllı Dizi ayrıştırıcı geliştirildi, düzenlenebilir Dizi Adı ve Çözümle butonu eklendi | **Güncel (Latest)** |
+| **[v6.0](https://github.com/mertahmet41/GokturkMediaDowlander/releases/tag/v6.0)** | GUI & Portable .EXE | Modern CustomTkinter masaüstü arayüzü, bağımsız tek dosya `.exe`, arka plan thread desteği | Arşiv |
 | **[v5.0](https://github.com/mertahmet41/GokturkMediaDowlander/releases/tag/v5.0)** | CLI & Core Fixes | KeyError, Windows dosya adı, m3u8 playlist filtresi ve Spotify düzeltmeleri | Arşiv |
 | **[v4.5](https://github.com/mertahmet41/GokturkMediaDowlander/releases/tag/v4.5)** | CLI (Legacy) | İlk kamuya açık prototip sürüm ([archive/v4.5-legacy](archive/v4.5-legacy)) | Arşiv |
 
